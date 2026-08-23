@@ -92,4 +92,42 @@ function Entry()
 		wait()
 		assert(c2, "c2 is false")
 	end
+
+	do
+		local c1 = false
+		local c2 = false
+		local c3 = false
+		local value: IntValue = Instance.New("IntValue")
+
+		value.Changed:Connect(function()
+			spawn(function()
+				c1 = true
+				wait()
+				c2 = true
+			end)
+			c3 = true
+		end)
+
+		value.Value = 1
+		assert(c1, "c1 is false")
+		assert(c2 == false)
+		assert(c3, "c3 is false")
+		wait()
+		assert(c2, "c2 is false")
+	end
+
+	do
+		local co = coroutine.create(function(a)
+			local b = coroutine.yield(a + 1)
+			return b + 1
+		end)
+
+		local ok, result = coroutine.resume(co, 4)
+		assert(ok)
+		assert(result == 5)
+
+		ok, result = coroutine.resume(co, 9)
+		assert(ok)
+		assert(result == 10)
+	end
 end
