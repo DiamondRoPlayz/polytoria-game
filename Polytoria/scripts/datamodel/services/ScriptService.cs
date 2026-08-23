@@ -511,8 +511,9 @@ public sealed partial class ScriptService : Instance
 				m.IsDefined(typeof(ScriptLegacyMethodAttribute)) &&
 				m.GetCustomAttribute<ScriptLegacyMethodAttribute>()?.MethodName?.Equals(key, StringComparison.CurrentCultureIgnoreCase) == true)
 			: methods.Where(m =>
-				m.Name.Equals(key) ||
-				m.GetCustomAttribute<ScriptMethodAttribute>()?.MethodName == key);
+				m.IsDefined(typeof(ScriptMethodAttribute)) &&
+				(m.Name.Equals(key) ||
+				 m.GetCustomAttribute<ScriptMethodAttribute>()?.MethodName == key));
 
 		if (compatibility && !methodInfos.Any())
 		{

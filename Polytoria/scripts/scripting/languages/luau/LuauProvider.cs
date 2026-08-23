@@ -931,7 +931,7 @@ public sealed partial class LuauProvider : IScriptLanguageProvider
 		try
 		{
 			await ResumeThread(co, state, 0, true);
-			if (!ms.ShouldContinue || !caller.ShouldContinue)
+			if (!ms.ShouldContinue)
 			{
 				tcs.TrySetResult(0);
 				return;
@@ -940,12 +940,21 @@ public sealed partial class LuauProvider : IScriptLanguageProvider
 			int top = co.GetTop();
 			if (top > 0)
 			{
+				co.PushValue(1);
+				ms.CachedLuauResultRef = co.Ref();
+			}
+
+			if (!caller.ShouldContinue || !state.IsAlive)
+			{
+				tcs.TrySetResult(0);
+				return;
+			}
+
+			if (top > 0)
+			{
 				for (int i = 1; i <= top; i++)
 					co.PushValue(i);
 				co.XMove(state, top);
-
-				state.PushValue(-top); // push copy of first result
-				ms.CachedLuauResultRef = state.Ref();
 			}
 			tcs.TrySetResult(top);
 		}
