@@ -70,19 +70,26 @@ public partial class LuaState : IDisposable
 		Marshal.StructureToPtr(options, optionsPtr, false);
 		*/
 
-		byte[] sourceBytes = Encoding.UTF8.GetBytes(sourceCode);
-		IntPtr size = new(sourceBytes.Length);
+		IntPtr size = new(Encoding.UTF8.GetByteCount(sourceCode));
 		IntPtr bytecodePtr = NativeBindings.luau_compile(sourceCode, size, IntPtr.Zero, out nint outSize);
 		if (bytecodePtr == IntPtr.Zero)
 		{
 			//Marshal.FreeHGlobal(optionsPtr);
 			throw new Exception("Error compiling Lua source code");
 		}
-		byte[] bytecode = new byte[outSize.ToInt32()];
-		Marshal.Copy(bytecodePtr, bytecode, 0, bytecode.Length);
-		Marshal.FreeHGlobal(bytecodePtr);
-		//Marshal.FreeHGlobal(optionsPtr);
-		return bytecode;
+		try
+		{
+			byte[] bytecode = GC.AllocateUninitializedArray<byte>(checked((int)outSize));
+			Marshal.Copy(bytecodePtr, bytecode, 0, bytecode.Length);
+			return bytecode;
+		}
+		finally
+		{
+			unsafe
+			{
+				NativeMemory.Free(bytecodePtr.ToPointer());
+			}
+		}
 	}
 
 	public LuaStatus Load(string name, byte[] compiled)

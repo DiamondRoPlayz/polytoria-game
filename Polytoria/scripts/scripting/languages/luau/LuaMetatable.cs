@@ -23,6 +23,8 @@ namespace Polytoria.Scripting.Luau;
 public class LuaMetatable : LuaObject
 {
 	private static readonly Dictionary<OverloadKey, (MethodInfo? methodInfo, bool hasParams)> _overloadCache = [];
+	private static readonly Dictionary<PropertyInfo, PropertyAccessData> _propertyAccessCache = [];
+	private static readonly Dictionary<MethodInfo, MethodInvocationData> _methodInvocationCache = [];
 
 	public LuaState Lua = null!;
 	[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicMethods)]
@@ -285,17 +287,16 @@ public class LuaMetatable : LuaObject
 
 		if (prop != null)
 		{
-			ScriptPropertyAttribute? propAttribute = prop.GetCustomAttribute<ScriptPropertyAttribute>();
-			if (propAttribute != null && propAttribute.Permissions != ScriptPermissionFlags.None &&
-				!script.PermissionFlags.HasFlag(propAttribute.Permissions))
+			PropertyAccessData accessData = GetPropertyAccessData(prop);
+			if (accessData.Permissions != ScriptPermissionFlags.None &&
+				!script.PermissionFlags.HasFlag(accessData.Permissions))
 			{
 				throw new UnauthorizedAccessException("script does not have permission to access the specified property (" + key + ")");
 			}
 
-			Attributes.ObsoleteAttribute? obsoleteAttribute = prop.GetCustomAttribute<Attributes.ObsoleteAttribute>();
-			if (obsoleteAttribute != null)
+			if (accessData.ObsoleteMessage != null)
 			{
-				PT.PrintWarn($"{prop.Name} is obsolete. {obsoleteAttribute.Message}");
+				PT.PrintWarn($"{prop.Name} is obsolete. {accessData.ObsoleteMessage}");
 			}
 
 			object? value = prop.GetValue(targetObject);
@@ -315,18 +316,25 @@ public class LuaMetatable : LuaObject
 					throw new InvalidOperationException("target method doesn't exist (" + key + ")");
 				}
 
-				// parse arguments
-				List<object?> argList = [];
-				for (int i = 0; i < top; i++)
+				object? firstArgument = null;
+				bool skipFirstArgument = false;
+				if (top > 0)
 				{
-					object? arg = LangProvider.LuaToObject(state, i + 1, methodInfos.ConvertParamsToGD, methodInfos.GetParamsAsFunction);
-
-					// Ignore self when the method was called with colon syntaxc
-					if (arg != targetObject || i != 0)
-						argList.Add(arg);
+					firstArgument = LangProvider.LuaToObject(state, 1, methodInfos.ConvertParamsToGD, methodInfos.GetParamsAsFunction);
+					skipFirstArgument = firstArgument == targetObject;
 				}
 
-				return ProcessMethod(state, methodInfos, targetObject, key, argList);
+				object?[] args = new object?[top - (skipFirstArgument ? 1 : 0)];
+				int argumentIndex = 0;
+				if (top > 0 && !skipFirstArgument)
+					args[argumentIndex++] = firstArgument;
+
+				for (int i = 2; i <= top; i++)
+				{
+					args[argumentIndex++] = LangProvider.LuaToObject(state, i, methodInfos.ConvertParamsToGD, methodInfos.GetParamsAsFunction);
+				}
+
+				return ProcessMethod(state, script, methodInfos, targetObject, key, args);
 			}
 
 			int safeMethodFunc(IntPtr L)
@@ -469,20 +477,22 @@ public class LuaMetatable : LuaObject
 		int top = state.GetTop();
 		int firstArgument = isFallback ? 3 : 2;
 
-		List<object?> argList = [];
+		int argumentCount = Math.Max(0, top - firstArgument + 1) + (methodInfos.SemiStatic ? 1 : 0);
+		object?[] args = new object?[argumentCount];
+		int argumentIndex = 0;
 
 		// Push self if function is semi-static.
 		if (methodInfos.SemiStatic)
 		{
-			argList.Add(LangProvider.LuaToObject(state, 1, methodInfos.ConvertParamsToGD, methodInfos.GetParamsAsFunction));
+			args[argumentIndex++] = LangProvider.LuaToObject(state, 1, methodInfos.ConvertParamsToGD, methodInfos.GetParamsAsFunction);
 		}
 
 		for (int i = firstArgument; i <= top; i++)
 		{
-			argList.Add(LangProvider.LuaToObject(state, i, methodInfos.ConvertParamsToGD, methodInfos.GetParamsAsFunction));
+			args[argumentIndex++] = LangProvider.LuaToObject(state, i, methodInfos.ConvertParamsToGD, methodInfos.GetParamsAsFunction);
 		}
 
-		return ProcessMethod(state, methodInfos, targetObject, key, argList);
+		return ProcessMethod(state, script, methodInfos, targetObject, key, args);
 	}
 
 	public int IndexWrapper(IntPtr L)
@@ -805,10 +815,8 @@ public class LuaMetatable : LuaObject
 		return false;
 	}
 
-	private int ProcessMethod(LuaState state, ScriptService.MethodsCacheData methodInfos, object? targetObject, string key, List<object?> argList)
+	private int ProcessMethod(LuaState state, Script script, ScriptService.MethodsCacheData methodInfos, object? targetObject, string key, object?[] args)
 	{
-		Script script = LuauProvider.GetScriptInstance(state);
-		object?[] args = [.. argList];
 		int argsCount = args.Length;
 
 		MethodInfo? targetMethod = ResolveOverload(methodInfos.Methods, args, out bool hasParams);
@@ -833,22 +841,21 @@ public class LuaMetatable : LuaObject
 			throw new Exception("attempt to call non static method on a static object (" + key + ")");
 		}
 
-		ScriptMethodAttribute? methodAttribute = targetMethod.GetCustomAttribute<ScriptMethodAttribute>();
-		if (methodAttribute != null && methodAttribute.Permissions != ScriptPermissionFlags.None &&
-			!script.PermissionFlags.HasFlag(methodAttribute.Permissions))
+		MethodInvocationData invocationData = GetMethodInvocationData(targetMethod);
+		if (invocationData.Permissions != ScriptPermissionFlags.None &&
+			!script.PermissionFlags.HasFlag(invocationData.Permissions))
 		{
 			throw new UnauthorizedAccessException("script does not have permission to call the specified method (" + targetMethod.Name + ")");
 		}
 
-		Attributes.ObsoleteAttribute? obsoleteAttribute = targetMethod.GetCustomAttribute<Attributes.ObsoleteAttribute>();
-		if (obsoleteAttribute != null)
+		if (invocationData.ObsoleteMessage != null)
 		{
-			PT.PrintWarn($"{targetMethod.Name} is obsolete. {obsoleteAttribute.Message}");
+			PT.PrintWarn($"{targetMethod.Name} is obsolete. {invocationData.ObsoleteMessage}");
 		}
 
 		// Prepare args array formatted for params
-		ParameterInfo[] parametersFinal = targetMethod.GetParameters();
-		int callerParamIndex = Array.FindIndex(parametersFinal, p => p.IsDefined(typeof(ScriptingCallerAttribute)));
+		ParameterInfo[] parametersFinal = invocationData.Parameters;
+		int callerParamIndex = invocationData.CallerParamIndex;
 
 		object?[] invokeArgs = new object?[parametersFinal.Length];
 
@@ -894,7 +901,7 @@ public class LuaMetatable : LuaObject
 		if (callerParamIndex >= 0)
 			invokeArgs[callerParamIndex] = script;
 
-		if (ScriptService.IsAsyncMethod(targetMethod))
+		if (invocationData.IsAsync)
 		{
 			TaskCompletionSource<int> tcs = new();
 			LuauProvider.SetYieldTask(state, tcs.Task);
@@ -907,6 +914,36 @@ public class LuaMetatable : LuaObject
 			LangProvider.PushValueToLua(state, result);
 			return 1;
 		}
+	}
+
+	private static PropertyAccessData GetPropertyAccessData(PropertyInfo property)
+	{
+		if (_propertyAccessCache.TryGetValue(property, out PropertyAccessData cached))
+			return cached;
+
+		ScriptPropertyAttribute? scriptAttribute = property.GetCustomAttribute<ScriptPropertyAttribute>();
+		Attributes.ObsoleteAttribute? obsoleteAttribute = property.GetCustomAttribute<Attributes.ObsoleteAttribute>();
+		PropertyAccessData result = new(scriptAttribute?.Permissions ?? ScriptPermissionFlags.None, obsoleteAttribute?.Message);
+		_propertyAccessCache[property] = result;
+		return result;
+	}
+
+	private static MethodInvocationData GetMethodInvocationData(MethodInfo method)
+	{
+		if (_methodInvocationCache.TryGetValue(method, out MethodInvocationData cached))
+			return cached;
+
+		ParameterInfo[] parameters = method.GetParameters();
+		ScriptMethodAttribute? scriptAttribute = method.GetCustomAttribute<ScriptMethodAttribute>();
+		Attributes.ObsoleteAttribute? obsoleteAttribute = method.GetCustomAttribute<Attributes.ObsoleteAttribute>();
+		MethodInvocationData result = new(
+			parameters,
+			Array.FindIndex(parameters, p => p.IsDefined(typeof(ScriptingCallerAttribute))),
+			scriptAttribute?.Permissions ?? ScriptPermissionFlags.None,
+			obsoleteAttribute?.Message,
+			ScriptService.IsAsyncMethod(method));
+		_methodInvocationCache[method] = result;
+		return result;
 	}
 
 	private static bool IsNullableType(Type type)
@@ -1038,4 +1075,13 @@ public class LuaMetatable : LuaObject
 		public override bool Equals(object? obj) => obj is OverloadKey k && Equals(k);
 		public override int GetHashCode() => _hashCode;
 	}
+
+	private readonly record struct PropertyAccessData(ScriptPermissionFlags Permissions, string? ObsoleteMessage);
+
+	private readonly record struct MethodInvocationData(
+		ParameterInfo[] Parameters,
+		int CallerParamIndex,
+		ScriptPermissionFlags Permissions,
+		string? ObsoleteMessage,
+		bool IsAsync);
 }
