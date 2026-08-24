@@ -54,6 +54,23 @@ function Entry()
 	end
 
 	do
+		-- wait yields no immediate values to the coroutine caller, then returns
+		-- the elapsed time when the scheduler resumes the waiting thread.
+		local elapsed = nil
+		local co = coroutine.create(function()
+			elapsed = wait()
+		end)
+
+		local resumeResults = table.pack(coroutine.resume(co))
+		assert(resumeResults.n == 1, "wait leaked a value while yielding")
+		assert(resumeResults[1] == true, "coroutine failed to start")
+
+		wait()
+		assert(type(elapsed) == "number", "wait did not return elapsed time")
+		assert(elapsed >= 0, "wait returned a negative elapsed time")
+	end
+
+	do
 		local c1 = false
 		local c2 = false
 		local c3 = false

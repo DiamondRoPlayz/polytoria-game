@@ -796,7 +796,7 @@ public sealed partial class LuauProvider : IScriptLanguageProvider
 
 		RunAsync();
 
-		return lua.Yield(1);
+		return lua.Yield(0);
 	}
 
 	public int LuaTime(IntPtr L)
