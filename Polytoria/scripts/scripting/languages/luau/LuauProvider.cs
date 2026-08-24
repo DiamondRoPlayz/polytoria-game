@@ -580,7 +580,7 @@ public sealed partial class LuauProvider : IScriptLanguageProvider
 	{
 		Script script = GetScriptInstance(thread);
 		int? ownedThreadRef = null;
-		
+
 		if (!threadIsRooted)
 		{
 			lock (thread)
