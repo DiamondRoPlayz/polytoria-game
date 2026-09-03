@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://dobfkys8wf0uc"]
 
 [ext_resource type="Script" uid="uid://dnev3eaahxpav" path="res://scripts/client/ui/playerlist/UILeaderboardUserItem.cs" id="1_dghsi"]
+[ext_resource type="StyleBox" uid="uid://bwksp3bsrvcf6" path="res://resources/styles/card_rounded.tres" id="2_fs1my"]
 
 [node name="UserItem" type="Button" unique_id=1315937502 node_paths=PackedStringArray("_iconRect", "_usernameLabel", "_statsBox", "_badgeRect")]
 custom_minimum_size = Vector2(0, 20)
@@ -11,7 +12,7 @@ grow_horizontal = 2
 mouse_default_cursor_shape = 2
 flat = true
 script = ExtResource("1_dghsi")
-_iconRect = NodePath("Item/PlayerInfo/Icon")
+_iconRect = NodePath("Item/PlayerInfo/Clip/Icon")
 _usernameLabel = NodePath("Item/PlayerInfo/Username")
 _statsBox = NodePath("Item/Stats")
 _badgeRect = NodePath("Item/PlayerInfo/Badge")
@@ -30,11 +31,22 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 0
 
-[node name="Icon" type="TextureRect" parent="Item/PlayerInfo" unique_id=2006527676]
+[node name="Clip" type="Panel" parent="Item/PlayerInfo" unique_id=455449318]
+clip_children = 1
 custom_minimum_size = Vector2(20, 0)
 layout_mode = 2
+theme_override_styles/panel = ExtResource("2_fs1my")
+
+[node name="Icon" type="TextureRect" parent="Item/PlayerInfo/Clip" unique_id=1075661095]
+custom_minimum_size = Vector2(20, 0)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 expand_mode = 1
-stretch_mode = 5
+stretch_mode = 6
 
 [node name="Spacer2" type="Control" parent="Item/PlayerInfo" unique_id=1343074699]
 custom_minimum_size = Vector2(3, 0)
