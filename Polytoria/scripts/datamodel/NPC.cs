@@ -236,7 +236,7 @@ public partial class NPC : Physical
 		{
 			if (this is Player plr && !plr.IsReady) return;
 			float oldHealth = _health;
-			_health = value;
+			_health = System.Math.Clamp(value, 0f, MaxHealth);
 			if (_health <= 0 && !IsDead)
 			{
 				TriggerNPCDead();
