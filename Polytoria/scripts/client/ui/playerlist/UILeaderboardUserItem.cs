@@ -24,6 +24,8 @@ public partial class UILeaderboardUserItem : Button
 	
 	private readonly PTImageAsset _plrIconAsset = new();
 
+	private static World Root => CoreUIRoot.Singleton.Root;
+
 	public override void _Ready()
 	{
 		_usernameLabel.Text = TargetPlayer.Name;
@@ -92,9 +94,11 @@ public partial class UILeaderboardUserItem : Button
 		UpdateBadge();
 	}
 
-	private void UpdateBadge()
+	private async void UpdateBadge()
 	{
-		string badgePath = Player.GetBadgeIconPath(TargetPlayer);
+		APIAreFriendsResponse? friendsStatus = await Root.Social.WebCheckFriendsStatus(Root.Players.LocalPlayer.UserID, TargetPlayer.UserID);
+		bool isFriend = friendsStatus.HasValue && !string.IsNullOrEmpty(friendsStatus.Value.FriendsSince);
+		string badgePath = Player.GetBadgeIconPath(TargetPlayer,isFriend);
 		if (badgePath.Length > 0)
 			_badgeRect.Texture = GD.Load<Texture2D>(badgePath);
 	}
